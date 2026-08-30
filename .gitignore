@@ -46,3 +46,8 @@ next-env.d.ts
 /dev.db
 /prisma/*.db
 *.db
+
+# agent skills - reproducible from skills-lock.json
+.agents/
+.claude/
+.windsurf/
