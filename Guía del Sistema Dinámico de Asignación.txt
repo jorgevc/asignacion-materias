@@ -1,0 +1,12 @@
+Guía del Sistema Dinámico de Asignación de Cursos
+El objetivo de este sistema es garantizar una distribución equitativa y transparente de la carga docente, respetando las prioridades de cada profesor, reconociendo la experiencia académica y premiando la flexibilidad en las solicitudes.
+1. ¿Cómo funciona la puntuación?
+La asignación de cada materia se realiza a través de un puntaje total que suma cuatro factores:
+Prioridad Base del Curso:Prioridad 1 (P1): $100\text{ puntos}$  
+Prioridad 2 (P2): $60\text{ puntos}$  
+Prioridad 3 (P3): $30\text{ puntos}$  
+Desempate por Trayectoria: $+1\text{ punto}$ por cada año de experiencia impartiendo la materia (hasta un máximo de $10\text{ puntos}$).  
+Bono de Desplazamiento (Protección Docente): Si un profesor no obtiene ninguna de sus opciones en su primera prioridad, el sistema le otorga un bono automático de $+100\text{ puntos}$ para protegerlo y evitar que caiga a opciones secundarias sin carga.
+Ajuste por Flexibilidad (Empate de prioridades): Si un profesor coloca varias materias dentro del mismo nivel de prioridad, el sistema evalúa su disponibilidad:
+    Mientras conserve materias de respaldo libres: Cede el paso a colegas que no tienen plan alternativo.
+    En su última materia restante de ese nivel: Recibe un premio de $+30\text{ puntos}$ por haber sido flexible inicialmente.  

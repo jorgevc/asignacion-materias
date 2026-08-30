@@ -1,0 +1,113 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Semester {
+  id        Int        @id @default(autoincrement())
+  label     String     @unique // e.g. "2026-2"
+  year      Int
+  term      String // "1" or "2"
+  isActive  Boolean    @default(false)
+  createdAt DateTime   @default(now())
+  courses   Course[]
+  petitions Petition[]
+  assignments Assignment[]
+
+  @@map("semesters")
+}
+
+model Course {
+  id         Int      @id @default(autoincrement())
+  code       String
+  name       String
+  cupo       Int?
+  dias       String? // e.g. "LUN-MIE-VIE"
+  horario    String? // e.g. "07:00-08:30"
+  ubicacion  String? // e.g. "Aula 101"
+  semesterId Int
+  semester   Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  petitions  Petition[]
+  assignments Assignment[]
+
+  @@index([semesterId, code])
+  @@index([semesterId])
+  @@map("courses")
+}
+
+model Teacher {
+  id          Int        @id @default(autoincrement())
+  email       String     @unique
+  name        String
+  employeeId  String?    @unique // No. de empleado único (opcional para legacy/seed)
+  phone       String? // celular opcional
+  affiliation String     @default("Interno") // Interno | Externo a FCFM
+  note        String? // nota pequeña
+  expYears    Int        @default(0) // legacy global, ahora usar TeacherCourseExp por curso
+  createdAt   DateTime   @default(now())
+  petitions Petition[]
+  assignments Assignment[]
+  exps      TeacherCourseExp[]
+
+  @@map("teachers")
+}
+
+model TeacherCourseExp {
+  id        Int     @id @default(autoincrement())
+  teacherId Int
+  teacher   Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  courseCode String // code de la materia (ej MAT101) - experiencia por curso
+  years     Int     @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([teacherId, courseCode])
+  @@index([teacherId])
+  @@map("teacher_course_exp")
+}
+
+model Petition {
+  id         Int       @id @default(autoincrement())
+  teacherId  Int
+  teacher    Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  semesterId Int
+  semester   Semester  @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  slotNo     Int // 1,2,3
+  courseId   Int
+  course     Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  priority   Int // 1,2,3 required, duplicates allowed
+  createdAt  DateTime  @default(now())
+  assignment Assignment?
+
+  @@unique([teacherId, semesterId, courseId]) // no duplicate course across slots for same teacher+semester
+  @@index([teacherId, semesterId, slotNo])
+  @@index([semesterId])
+  @@map("petitions")
+}
+
+model Assignment {
+  id         Int      @id @default(autoincrement())
+  teacherId  Int
+  teacher    Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  courseId   Int      @unique // 1 curso = 1 docente
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  semesterId Int
+  semester   Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  slotNo     Int // 1,2,3 cual slot ganó
+  petitionId Int      @unique
+  petition   Petition @relation(fields: [petitionId], references: [id], onDelete: Cascade)
+  priority   Int // prioridad original del petition asignado
+  puntaje    Int
+  detalle    String? // JSON con desglose base, desplazamiento, flex, exp
+  createdAt  DateTime @default(now())
+
+  @@index([semesterId, slotNo])
+  @@index([teacherId, semesterId])
+  @@map("assignments")
+}
