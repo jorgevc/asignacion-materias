@@ -27,6 +27,8 @@ npm run dev         # http://localhost:3000
 npm run build && npm start # producción
 ```
 
+Requiere `ADMIN_PASSWORD` en `.env`: contraseña del panel `/admin` (sin ella, las rutas `/api/admin/*` y `/admin` quedan bloqueadas con 401/redirect).
+
 ## Flujo Docente `/`
 1. Ingresar email + nombre + seleccionar semestre (activo por defecto).
 2. Completar Slot 1 (3 materias + prioridad c/u).

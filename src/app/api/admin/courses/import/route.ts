@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseExcelBuffer, transformUrlForDownload } from "@/lib/excel";
+import { safeFetch } from "@/lib/safeFetch";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,7 @@ async function getBufferAndMapping(req: Request): Promise<{ buffer: Buffer; mapp
       buffer = Buffer.from(ab);
     } else if (url) {
       const transformed = transformUrlForDownload(url);
-      const res = await fetch(transformed);
+      const res = await safeFetch(transformed);
       if (!res.ok) throw new Error(`No se pudo descargar URL: ${res.status} ${res.statusText}`);
       const ab = await res.arrayBuffer();
       buffer = Buffer.from(ab);
@@ -41,7 +42,7 @@ async function getBufferAndMapping(req: Request): Promise<{ buffer: Buffer; mapp
     // body may contain url and mapping
     if (body.url) {
       const transformed = transformUrlForDownload(body.url);
-      const res = await fetch(transformed);
+      const res = await safeFetch(transformed);
       if (!res.ok) throw new Error(`No se pudo descargar URL: ${res.status} ${res.statusText}`);
       const ab = await res.arrayBuffer();
       buffer = Buffer.from(ab);

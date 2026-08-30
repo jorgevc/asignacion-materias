@@ -41,10 +41,11 @@ export function suggestMapping(headers: string[]): Record<number, string> {
   const used = new Set<string>();
   headers.forEach((h, idx) => {
     const norm = normalizeHeader(h);
+    if (!norm) return;
     for (const field of targetFields) {
       if (used.has(field)) continue;
       const al = aliases[field];
-      if (al.some((a) => norm === a || norm.includes(a) || a.includes(norm))) {
+      if (al.some((a) => norm === a || norm.includes(a))) {
         map[idx] = field;
         used.add(field);
         break;

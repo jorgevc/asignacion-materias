@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseExcelBuffer, suggestMapping, transformUrlForDownload } from "@/lib/excel";
+import { safeFetch } from "@/lib/safeFetch";
 
 export const runtime = "nodejs";
 
@@ -15,7 +16,7 @@ async function getBufferFromRequest(req: Request): Promise<Buffer> {
     }
     if (url) {
       const transformed = transformUrlForDownload(url);
-      const res = await fetch(transformed);
+      const res = await safeFetch(transformed);
       if (!res.ok) throw new Error(`No se pudo descargar URL: ${res.status} ${res.statusText}`);
       const ab = await res.arrayBuffer();
       return Buffer.from(ab);
@@ -26,7 +27,7 @@ async function getBufferFromRequest(req: Request): Promise<Buffer> {
     const body = await req.json().catch(() => null);
     if (body?.url) {
       const transformed = transformUrlForDownload(body.url);
-      const res = await fetch(transformed);
+      const res = await safeFetch(transformed);
       if (!res.ok) throw new Error(`No se pudo descargar URL: ${res.status} ${res.statusText}`);
       const ab = await res.arrayBuffer();
       return Buffer.from(ab);

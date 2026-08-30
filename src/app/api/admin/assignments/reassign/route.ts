@@ -53,12 +53,14 @@ export async function POST(req: Request) {
       }
     }
 
-    // Borrar asignaciones existentes para ese slot (recálculo bloqueado)
-    await prisma.assignment.deleteMany({ where: { semesterId, slotNo } });
-
-    // Ejecutar asignador con bloqueos
+    // Ejecutar asignador con bloqueos (solo lectura, antes de tocar datos)
     const result = await asignarSlot(semesterId, slotNo, lockedList);
-    await persistAsignaciones(result);
+
+    // Borrar + persistir atómicamente: si algo falla, el slot conserva sus asignaciones previas
+    await prisma.$transaction(async (tx) => {
+      await tx.assignment.deleteMany({ where: { semesterId, slotNo } });
+      await persistAsignaciones(result, tx);
+    });
 
     return NextResponse.json({ ok: true, message: `Slot ${slotNo} recalculado con ${lockedList.length} bloqueos`, ...result });
   } catch (e) {

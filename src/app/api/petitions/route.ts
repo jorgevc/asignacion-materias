@@ -6,6 +6,8 @@ type SlotInput = {
   options: { courseId: number; priority: number }[];
 };
 
+class PetitionsLockedError extends Error {}
+
 // GET /api/petitions?email=...&semesterId=...
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -128,6 +130,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "One or more courses not found for this semester" }, { status: 400 });
     }
 
+    const existingTeacher = await prisma.teacher.findUnique({ where: { email: emailNorm } });
+    if (existingTeacher) {
+      const assignmentCount = await prisma.assignment.count({
+        where: { teacherId: existingTeacher.id, semesterId: sid },
+      });
+      if (assignmentCount > 0) {
+        return NextResponse.json(
+          { error: "No se pueden guardar las peticiones: este docente ya tiene asignaciones en este semestre. Contacte al administrador." },
+          { status: 409 }
+        );
+      }
+    }
+
     const teacher = await prisma.teacher.upsert({
       where: { email: emailNorm },
       update: { name: nameNorm },
@@ -135,6 +150,12 @@ export async function POST(req: Request) {
     });
 
     await prisma.$transaction(async (tx) => {
+      const assignmentCount = await tx.assignment.count({
+        where: { teacherId: teacher.id, semesterId: sid },
+      });
+      if (assignmentCount > 0) {
+        throw new PetitionsLockedError();
+      }
       await tx.petition.deleteMany({
         where: { teacherId: teacher.id, semesterId: sid },
       });
@@ -183,6 +204,12 @@ export async function POST(req: Request) {
       slots: resultSlots,
     });
   } catch (e) {
+    if (e instanceof PetitionsLockedError) {
+      return NextResponse.json(
+        { error: "No se pueden guardar las peticiones: este docente ya tiene asignaciones en este semestre. Contacte al administrador." },
+        { status: 409 }
+      );
+    }
     console.error(e);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { escapeCsvCell } from "@/lib/csv";
 
 type Course = { id: number; code: string; name: string; cupo: number | null; dias: string | null; horario: string | null; ubicacion: string | null };
 type Teacher = { id: number; email: string; name: string };
@@ -316,7 +317,20 @@ export default function AdminPage() {
     for (const s of data.slots) {
       for (const o of s.options) {
         rows.push(
-          `"${s.teacher.email}","${s.teacher.name.replace(/"/g, '""')}",${s.slot_no},"${o.course.code}","${o.course.name.replace(/"/g, '""')}","${o.course.cupo ?? ""}","${o.course.dias ?? ""}","${o.course.horario ?? ""}","${o.course.ubicacion ?? ""}",${o.priority}`
+          [
+            s.teacher.email,
+            s.teacher.name,
+            s.slot_no,
+            o.course.code,
+            o.course.name,
+            o.course.cupo ?? "",
+            o.course.dias ?? "",
+            o.course.horario ?? "",
+            o.course.ubicacion ?? "",
+            o.priority,
+          ]
+            .map(escapeCsvCell)
+            .join(",")
         );
       }
     }

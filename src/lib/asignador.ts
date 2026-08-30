@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import {
   Prioridad,
   calcularPuntaje,
@@ -104,6 +105,7 @@ export async function asignarSlot(semesterId: number, slotNo: number, locked: Ar
     perdioP1: boolean;
     perdioP2: boolean;
     flexPrevPerdida: boolean;
+    preRoundAvailCount: number;
   };
 
   const states = new Map<number, TeacherState>();
@@ -116,6 +118,7 @@ export async function asignarSlot(semesterId: number, slotNo: number, locked: Ar
       perdioP1: false,
       perdioP2: false,
       flexPrevPerdida: false,
+      preRoundAvailCount: 0,
     });
   }
 
@@ -148,6 +151,7 @@ export async function asignarSlot(semesterId: number, slotNo: number, locked: Ar
       const availableGroup = rawGroup.filter(
         (p) => !cursosAsignadosEnEsteSlot.has(p.courseId) && !asignadosCourseIds.has(p.courseId) && disponibleSet.has(p.courseId)
       );
+      state.preRoundAvailCount = availableGroup.length;
       if (availableGroup.length === 0) continue;
 
       for (let i = 0; i < availableGroup.length; i++) {
@@ -187,30 +191,7 @@ export async function asignarSlot(semesterId: number, slotNo: number, locked: Ar
       }
     }
 
-    if (candidatos.length === 0) {
-      // FIX punto 3: marcar perdio solo si tenía petitions disponibles en esta prioridad y no logró candidato por competencia, no por falta de demanda
-      for (const [teacherId, state] of states.entries()) {
-        if (state.assigned) continue;
-        const rawGroup = state.petitions.filter((p) => p.priority === prioridad);
-        if (rawGroup.length === 0) continue;
-        const availableGroup = rawGroup.filter(
-          (p) => !cursosAsignadosEnEsteSlot.has(p.courseId) && !asignadosCourseIds.has(p.courseId) && disponibleSet.has(p.courseId)
-        );
-        if (availableGroup.length === 0) continue; // sin demanda real, no es pérdida
-        const hasCandidate = candidatos.some((c) => c.teacherState.teacher.id === teacherId);
-        if (!hasCandidate) {
-          // Perdió toda la prioridad (sin chance) - todos sus cursos de esta prioridad fueron tomados o no compitió
-          if (prioridad === 1) {
-            state.perdioP1 = true;
-            state.flexPrevPerdida = availableGroup.length > 1;
-          } else if (prioridad === 2) {
-            state.perdioP2 = true;
-            state.flexPrevPerdida = availableGroup.length > 1 ? true : state.flexPrevPerdida;
-          }
-        }
-      }
-      continue;
-    }
+    if (candidatos.length === 0) continue;
 
     // FIX punto 5: empates filtra asignados/locked y cursos sin demanda ya excluidos
     const byCourseTmp = new Map<number, typeof candidatos>();
@@ -289,26 +270,18 @@ export async function asignarSlot(semesterId: number, slotNo: number, locked: Ar
       st.assignedPetitionId = g.petition.id;
     }
 
-    // Para teachers no asignados en esta prioridad que tenían petitions en esta prioridad, marcar perdio
+    // Marcar desplazados: tenían opciones disponibles al iniciar la ronda y no ganaron ninguna
     for (const [teacherId, state] of states.entries()) {
       if (state.assigned || teachersAsignadosEnEsteSlot.has(teacherId)) continue;
       const rawGroup = state.petitions.filter((p) => p.priority === prioridad);
       if (rawGroup.length === 0) continue;
-      const availableGroup = rawGroup.filter(
-        (p) => !cursosAsignadosEnEsteSlot.has(p.courseId) && !asignadosCourseIds.has(p.courseId) && disponibleSet.has(p.courseId)
-      );
-      if (availableGroup.length === 0) continue;
-      const gano = asignacionesEstaPrioridad.some((a) => a.teacherState.teacher.id === teacherId);
-      if (!gano) {
-        if (prioridad === 1) {
-          state.perdioP1 = true;
-          state.flexPrevPerdida = availableGroup.length > 1;
-        } else if (prioridad === 2) {
-          state.perdioP2 = true;
-          if (availableGroup.length > 1) state.flexPrevPerdida = true;
-        }
-      } else {
-        state.flexPrevPerdida = false;
+      if (state.preRoundAvailCount === 0) continue;
+      if (prioridad === 1) {
+        state.perdioP1 = true;
+        state.flexPrevPerdida = state.preRoundAvailCount > 1;
+      } else if (prioridad === 2) {
+        state.perdioP2 = true;
+        if (state.preRoundAvailCount > 1) state.flexPrevPerdida = true;
       }
     }
 
@@ -367,10 +340,11 @@ export async function asignarSlot(semesterId: number, slotNo: number, locked: Ar
   };
 }
 
-export async function persistAsignaciones(result: AsignarSlotResult) {
+export async function persistAsignaciones(result: AsignarSlotResult, client?: Prisma.TransactionClient) {
+  const db = client ?? prisma;
   const toCreate: Array<{ teacherId: number; courseId: number; semesterId: number; slotNo: number; petitionId: number; priority: number; puntaje: number; detalle: string }> = [];
   for (const a of result.asignados) {
-    const petition = await prisma.petition.findFirst({
+    const petition = await db.petition.findFirst({
       where: { teacherId: a.teacherId, semesterId: result.semesterId, slotNo: result.slotNo, courseId: a.courseId },
     });
     if (!petition) continue;
@@ -386,7 +360,7 @@ export async function persistAsignaciones(result: AsignarSlotResult) {
     });
   }
   if (toCreate.length === 0) return;
-  await prisma.$transaction(async (tx) => {
+  const upsertAll = async (tx: Prisma.TransactionClient) => {
     for (const data of toCreate) {
       await tx.assignment.upsert({
         where: { courseId: data.courseId },
@@ -394,5 +368,10 @@ export async function persistAsignaciones(result: AsignarSlotResult) {
         create: data,
       });
     }
-  });
+  };
+  if (client) {
+    await upsertAll(client);
+    return;
+  }
+  await prisma.$transaction(upsertAll);
 }
