@@ -58,3 +58,7 @@ next-env.d.ts
 *.csv
 Programacion Academica Historica/
 
+# Deprecated base scripts
+algoritmo.py
+
+
