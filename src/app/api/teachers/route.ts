@@ -56,6 +56,7 @@ export async function POST(req: Request) {
         employeeId,
         phone: body.phone ? String(body.phone).trim() : null,
         affiliation: body.affiliation === "Externo" ? "Externo" : "Interno",
+        isActive: body.isActive !== undefined ? Boolean(body.isActive) : true,
         note: body.note ? String(body.note).trim() : null,
       },
     });
@@ -76,7 +77,7 @@ export async function PATCH(req: Request) {
     const existing = await prisma.teacher.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ error: "Docente no encontrado" }, { status: 404 });
 
-    const data: Record<string, string | null> = {};
+    const data: Record<string, string | boolean | null> = {};
     if (body.name !== undefined) {
       const name = String(body.name).trim();
       if (!name) return NextResponse.json({ error: "name no puede estar vacío" }, { status: 400 });
@@ -97,6 +98,7 @@ export async function PATCH(req: Request) {
     }
     if (body.phone !== undefined) data.phone = body.phone ? String(body.phone).trim() : null;
     if (body.affiliation !== undefined) data.affiliation = body.affiliation === "Externo" ? "Externo" : "Interno";
+    if (body.isActive !== undefined) data.isActive = Boolean(body.isActive);
     if (body.note !== undefined) data.note = body.note ? String(body.note).trim() : null;
 
     const teacher = await prisma.teacher.update({ where: { id }, data });

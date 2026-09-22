@@ -31,7 +31,7 @@ function normalizeKey(str: string): string {
 }
 
 // Mapeo flexible de posibles nombres de columna
-function matchColumn(header: string): "employeeId" | "name" | "email" | "phone" | "affiliation" | "note" | null {
+function matchColumn(header: string): "employeeId" | "name" | "email" | "phone" | "affiliation" | "isActive" | "note" | null {
   const norm = normalizeKey(header);
   
   if (
@@ -52,6 +52,9 @@ function matchColumn(header: string): "employeeId" | "name" | "email" | "phone" 
   }
   if (["affiliation", "adscripcion", "tipo", "fcfm"].includes(norm)) {
     return "affiliation";
+  }
+  if (["isactive", "activo", "status", "estatus", "estado"].includes(norm)) {
+    return "isActive";
   }
   if (["note", "nota", "observaciones", "comentarios"].includes(norm)) {
     return "note";
@@ -93,6 +96,7 @@ export async function importarProfesoresDesdeBuffer(
     let email = "";
     let phone: string | null = null;
     let affiliation = "Interno";
+    let isActive = true;
     let note: string | null = null;
 
     for (const [colName, val] of Object.entries(row)) {
@@ -116,6 +120,9 @@ export async function importarProfesoresDesdeBuffer(
           break;
         case "affiliation":
           affiliation = strVal.toLowerCase().includes("ext") ? "Externo" : "Interno";
+          break;
+        case "isActive":
+          isActive = !["0", "no", "false", "inactivo"].includes(strVal.toLowerCase());
           break;
         case "note":
           note = strVal;
@@ -200,6 +207,7 @@ export async function importarProfesoresDesdeBuffer(
             employeeId: employeeId || existing.employeeId,
             phone: phone !== null ? phone : existing.phone,
             affiliation: affiliation || existing.affiliation,
+            isActive,
             note: note !== null ? note : existing.note,
           },
         });
@@ -222,6 +230,7 @@ export async function importarProfesoresDesdeBuffer(
             employeeId,
             phone,
             affiliation,
+            isActive,
             note,
           },
         });

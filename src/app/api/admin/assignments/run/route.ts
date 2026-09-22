@@ -30,8 +30,9 @@ export async function POST(req: Request) {
     if (slotNo > 1) {
       for (let s = 1; s < slotNo; s++) {
         const prevCount = await prisma.assignment.count({ where: { semesterId, slotNo: s } });
-        // Si no hay petitions para slot previo, es ok saltar, pero si hay petitions y no hay asignaciones, advertir
-        const petitionsPrev = await prisma.petition.count({ where: { semesterId, slotNo: s } });
+        const petitionsPrev = await prisma.petition.count({
+          where: { semesterId, slotNo: s, teacher: { isActive: true } },
+        });
         if (petitionsPrev > 0 && prevCount === 0) {
           return NextResponse.json({ error: `Debe asignar slot ${s} primero (slot ${slotNo} requiere que slots previos estén asignados)` }, { status: 400 });
         }

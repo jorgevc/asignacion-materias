@@ -49,6 +49,7 @@ model Teacher {
   employeeId  String?    @unique // No. de empleado único (opcional para legacy/seed)
   phone       String? // celular opcional
   affiliation String     @default("Interno") // Interno | Externo a FCFM
+  isActive    Boolean    @default(true) // Activo o Inactivo en el proceso de asignación
   note        String? // nota pequeña
   expPeriods  Int        @default(0) // legacy global, ahora usar TeacherCourseExp por curso
   createdAt   DateTime   @default(now())

@@ -10,12 +10,13 @@ type AdminTeacher = {
   employeeId: string | null;
   phone: string | null;
   affiliation: string;
+  isActive?: boolean | null;
   note: string | null;
   _count?: { petitions: number; assignments: number };
 };
-type NewTeacher = { name: string; email: string; employeeId: string; phone: string; affiliation: string; note: string };
+type NewTeacher = { name: string; email: string; employeeId: string; phone: string; affiliation: string; isActive: boolean; note: string };
 
-const EMPTY_NEW: NewTeacher = { name: "", email: "", employeeId: "", phone: "", affiliation: "Interno", note: "" };
+const EMPTY_NEW: NewTeacher = { name: "", email: "", employeeId: "", phone: "", affiliation: "Interno", isActive: true, note: "" };
 
 export default function TeachersPage() {
   const [teachersAdmin, setTeachersAdmin] = useState<AdminTeacher[]>([]);
@@ -67,6 +68,7 @@ export default function TeachersPage() {
     }
   };
 
+
   const handleDeleteTeacher = async (id: number, name: string) => {
     if (!confirm(`¿Borrar docente ${name}?`)) return;
     setTeachersMsg(null);
@@ -103,6 +105,7 @@ export default function TeachersPage() {
   } | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [filterText, setFilterText] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
 
   const handleBulkUpload = async () => {
     if (!bulkFile) {
@@ -146,6 +149,9 @@ export default function TeachersPage() {
   };
 
   const filteredTeachers = teachersAdmin.filter((t) => {
+    const active = Boolean(t.isActive ?? true);
+    if (statusFilter === "active" && !active) return false;
+    if (statusFilter === "inactive" && active) return false;
     if (!filterText.trim()) return true;
     const q = filterText.toLowerCase().trim();
     const nameMatch = t.name.toLowerCase().includes(q);
@@ -296,6 +302,17 @@ export default function TeachersPage() {
               <option>Externo</option>
             </select>
           </div>
+          <div className="flex items-center gap-1.5 pb-2">
+            <label className="text-xs font-medium flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={newTeacher.isActive}
+                onChange={(e) => setNewTeacher((p) => ({ ...p, isActive: e.target.checked }))}
+                className="h-4 w-4 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              <span>Activo</span>
+            </label>
+          </div>
           <div className="flex-1 min-w-48">
             <label className="text-xs font-medium block">Nota</label>
             <input value={newTeacher.note} onChange={(e) => setNewTeacher((p) => ({ ...p, note: e.target.value }))} className="w-full border rounded px-2 py-1.5 text-sm" />
@@ -305,8 +322,8 @@ export default function TeachersPage() {
           </button>
         </div>
 
-        {/* Buscador / Filtro */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+        {/* Buscador y Filtros */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
           <div className="relative flex-1 max-w-md">
             <input
               type="text"
@@ -324,6 +341,38 @@ export default function TeachersPage() {
               </button>
             )}
           </div>
+
+          {/* Filtro por estado activo/inactivo */}
+          <div className="flex items-center gap-1 bg-zinc-100 p-0.5 rounded-lg text-xs self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setStatusFilter("all")}
+              className={`px-2.5 py-1 rounded-md font-medium transition ${
+                statusFilter === "all" ? "bg-white text-zinc-900 shadow-xs" : "text-zinc-600 hover:text-zinc-900"
+              }`}
+            >
+              Todos ({teachersAdmin.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter("active")}
+              className={`px-2.5 py-1 rounded-md font-medium transition ${
+                statusFilter === "active" ? "bg-white text-emerald-700 shadow-xs" : "text-zinc-600 hover:text-emerald-700"
+              }`}
+            >
+              Activos ({teachersAdmin.filter((t) => Boolean(t.isActive ?? true)).length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter("inactive")}
+              className={`px-2.5 py-1 rounded-md font-medium transition ${
+                statusFilter === "inactive" ? "bg-white text-zinc-800 shadow-xs" : "text-zinc-600 hover:text-zinc-900"
+              }`}
+            >
+              Inactivos ({teachersAdmin.filter((t) => !Boolean(t.isActive ?? true)).length})
+            </button>
+          </div>
+
           <div className="text-xs text-zinc-500">
             Mostrando <strong>{filteredTeachers.length}</strong> de <strong>{teachersAdmin.length}</strong> docentes
           </div>
@@ -334,6 +383,7 @@ export default function TeachersPage() {
           <table className="w-full text-xs">
             <thead className="bg-zinc-100 sticky top-0">
               <tr>
+                <th className="px-2 py-1 text-center">Activo</th>
                 <th className="px-2 py-1 text-left">No. empleado</th>
                 <th className="px-2 py-1 text-left">Nombre</th>
                 <th className="px-2 py-1 text-left">Email</th>
@@ -347,19 +397,42 @@ export default function TeachersPage() {
             <tbody>
               {filteredTeachers.map((t) => {
                 const edit = teacherEdit[t.id] || {};
-                const val = (k: keyof NewTeacher, cur: string | null) => (edit[k] !== undefined ? String(edit[k]) : cur ?? "");
+                const val = (k: keyof NewTeacher, cur: string | null | undefined) => (edit[k] !== undefined ? String(edit[k]) : cur ?? "");
                 const dirty = Object.keys(edit).length > 0;
+                const isCurrentActive = Boolean(edit.isActive !== undefined ? edit.isActive : (t.isActive ?? true));
                 return (
-                  <tr key={t.id} className={`border-t ${dirty ? "bg-amber-50" : ""}`}>
-                    <td className="px-2 py-1">
-                      <input value={val("employeeId", t.employeeId)} onChange={(e) => setTeacherEdit((prev) => ({ ...prev, [t.id]: { ...edit, employeeId: e.target.value } }))} className="w-24 border rounded px-1 py-0.5" />
+                  <tr key={t.id} className={`border-t transition ${!isCurrentActive ? "bg-zinc-100/70 text-zinc-500" : dirty ? "bg-amber-50" : ""}`}>
+                    <td className="px-2 py-1 text-center">
+                      <input
+                        type="checkbox"
+                        checked={isCurrentActive}
+                        onChange={(e) => {
+                          const nextVal = e.target.checked;
+                          setTeacherEdit((prev) => ({
+                            ...prev,
+                            [t.id]: { ...edit, isActive: nextVal },
+                          }));
+                        }}
+                        className="h-4 w-4 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                        title={isCurrentActive ? "Activo (participa en asignación)" : "Inactivo (excluido de asignación)"}
+                      />
                     </td>
                     <td className="px-2 py-1">
-                      <input value={val("name", t.name)} onChange={(e) => setTeacherEdit((prev) => ({ ...prev, [t.id]: { ...edit, name: e.target.value } }))} className="w-52 border rounded px-1 py-0.5" />
+                      <input value={val("employeeId", t.employeeId)} onChange={(e) => setTeacherEdit((prev) => ({ ...prev, [t.id]: { ...edit, employeeId: e.target.value } }))} className="w-24 border rounded px-1 py-0.5 bg-white" />
+                    </td>
+                    <td className="px-2 py-1">
+                      <div className="flex items-center gap-1.5">
+                        <input value={val("name", t.name)} onChange={(e) => setTeacherEdit((prev) => ({ ...prev, [t.id]: { ...edit, name: e.target.value } }))} className="w-52 border rounded px-1 py-0.5 bg-white" />
+                        {!isCurrentActive && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 shrink-0">
+                            Inactivo
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-2 py-1">{t.email}</td>
                     <td className="px-2 py-1">
-                      <input value={val("phone", t.phone)} onChange={(e) => setTeacherEdit((prev) => ({ ...prev, [t.id]: { ...edit, phone: e.target.value } }))} className="w-28 border rounded px-1 py-0.5" />
+                      <input value={val("phone", t.phone)} onChange={(e) => setTeacherEdit((prev) => ({ ...prev, [t.id]: { ...edit, phone: e.target.value } }))} className="w-28 border rounded px-1 py-0.5 bg-white" />
                     </td>
                     <td className="px-2 py-1 text-center">
                       <select value={edit.affiliation !== undefined ? edit.affiliation : t.affiliation} onChange={(e) => setTeacherEdit((prev) => ({ ...prev, [t.id]: { ...edit, affiliation: e.target.value } }))} className="border rounded px-1 py-0.5 bg-white">
@@ -368,7 +441,7 @@ export default function TeachersPage() {
                       </select>
                     </td>
                     <td className="px-2 py-1">
-                      <input value={val("note", t.note)} onChange={(e) => setTeacherEdit((prev) => ({ ...prev, [t.id]: { ...edit, note: e.target.value } }))} className="w-full min-w-40 border rounded px-1 py-0.5" />
+                      <input value={val("note", t.note)} onChange={(e) => setTeacherEdit((prev) => ({ ...prev, [t.id]: { ...edit, note: e.target.value } }))} className="w-full min-w-40 border rounded px-1 py-0.5 bg-white" />
                     </td>
                     <td className="px-2 py-1 text-center text-zinc-500">
                       {t._count?.petitions ?? 0}/{t._count?.assignments ?? 0}
@@ -382,7 +455,7 @@ export default function TeachersPage() {
               })}
               {filteredTeachers.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-4 text-center text-zinc-500">
+                  <td colSpan={9} className="px-3 py-4 text-center text-zinc-500">
                     {filterText ? "No se encontraron docentes con el criterio de búsqueda." : "Sin docentes registrados"}
                   </td>
                 </tr>

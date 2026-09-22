@@ -90,6 +90,7 @@ export async function GET(req: Request) {
       email: teacher.email,
       name: teacher.name,
       phone: teacher.phone,
+      affiliation: teacher.affiliation,
     },
     isSubmitted,
     submittedAt,
@@ -251,7 +252,7 @@ export async function POST(req: Request) {
         data: updateData,
       });
     } else {
-      // Si el docente no existe, crear nuevo
+      // Si el docente no existe, crear nuevo con adscripción 'Externo' por defecto
       const effectiveEmail = emailNorm || `${empNorm?.toLowerCase()}@correo.buap.mx`;
       teacher = await prisma.teacher.create({
         data: {
@@ -259,6 +260,7 @@ export async function POST(req: Request) {
           email: effectiveEmail,
           name: nameNorm,
           phone: phoneNorm,
+          affiliation: "Externo",
         },
       });
     }

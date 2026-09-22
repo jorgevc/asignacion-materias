@@ -68,7 +68,12 @@ export async function asignarSlot(semesterId: number, slotNo: number, locked: Ar
   const disponibleSet = new Set(cursosDisponibles.map((c) => c.id));
 
   const petitions = await prisma.petition.findMany({
-    where: { semesterId, slotNo, courseId: { in: Array.from(disponibleSet) } },
+    where: {
+      semesterId,
+      slotNo,
+      courseId: { in: Array.from(disponibleSet) },
+      teacher: { isActive: true },
+    },
     include: { teacher: true, course: true },
     orderBy: [{ teacherId: "asc" }, { priority: "asc" }, { id: "asc" }],
   });
@@ -598,7 +603,11 @@ export async function analizarOpcionesRescate(
   }
 
   const petitions = await prisma.petition.findMany({
-    where: { semesterId, slotNo },
+    where: {
+      semesterId,
+      slotNo,
+      teacher: { isActive: true },
+    },
     include: { teacher: true, course: true },
     orderBy: [{ teacherId: "asc" }, { priority: "asc" }, { id: "asc" }],
   });
