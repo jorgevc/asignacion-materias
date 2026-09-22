@@ -83,39 +83,211 @@ export default function TeachersPage() {
     }
   };
 
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkSummary, setBulkSummary] = useState<{
+    totalRows: number;
+    createdCount: number;
+    updatedCount: number;
+    skippedCount: number;
+    errorCount: number;
+    results: Array<{
+      rowNumber: number;
+      success: boolean;
+      action?: string;
+      employeeId?: string | null;
+      name?: string;
+      email?: string;
+      error?: string;
+    }>;
+  } | null>(null);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
+  const [filterText, setFilterText] = useState("");
+
+  const handleBulkUpload = async () => {
+    if (!bulkFile) {
+      setTeachersMsg({ type: "error", text: "Selecciona un archivo Excel (.xlsx, .xls) o CSV (.csv)" });
+      return;
+    }
+    setBulkLoading(true);
+    setTeachersMsg(null);
+    setBulkSummary(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", bulkFile);
+      const res = await fetch("/api/admin/teachers/import", {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTeachersMsg({ type: "error", text: data.error || "Error al importar el archivo" });
+      } else {
+        setBulkSummary(data.summary);
+        setTeachersMsg({
+          type: "ok",
+          text: `Proceso completado: ${data.summary.createdCount} creados, ${data.summary.updatedCount} actualizados, ${data.summary.errorCount} errores.`,
+        });
+        setBulkFile(null);
+        // Reset file input value
+        const inputElem = document.getElementById("bulk-teacher-input") as HTMLInputElement;
+        if (inputElem) inputElem.value = "";
+        await fetchTeachers();
+      }
+    } catch (e) {
+      setTeachersMsg({ type: "error", text: String(e) });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    window.location.href = "/api/admin/teachers/import?template=true";
+  };
+
+  const filteredTeachers = teachersAdmin.filter((t) => {
+    if (!filterText.trim()) return true;
+    const q = filterText.toLowerCase().trim();
+    const nameMatch = t.name.toLowerCase().includes(q);
+    const empMatch = (t.employeeId || "").toLowerCase().includes(q);
+    const emailMatch = t.email.toLowerCase().includes(q);
+    const phoneMatch = (t.phone || "").toLowerCase().includes(q);
+    return nameMatch || empMatch || emailMatch || phoneMatch;
+  });
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Profesores ({teachersAdmin.length})</h1>
-        <p className="text-sm text-zinc-600">
-          <Link href="/admin" className="text-indigo-600 hover:underline">← Volver al panel de administración</Link>
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Gestión de Profesores ({teachersAdmin.length})</h1>
+          <p className="text-sm text-zinc-600">
+            <Link href="/admin" className="text-indigo-600 hover:underline">← Volver al panel de administración</Link>
+          </p>
+        </div>
+        <button
+          onClick={handleDownloadTemplate}
+          className="px-3 py-1.5 rounded border border-zinc-300 bg-white text-xs font-medium text-zinc-700 hover:bg-zinc-50 shadow-sm flex items-center gap-1.5"
+        >
+          <span>📥</span> Descargar Plantilla CSV
+        </button>
       </div>
 
-      <div className="border rounded-lg bg-white p-4">
-        <p className="text-xs text-zinc-600 mb-3">Alta y edición de docentes: No. de empleado único, celular opcional, interno/externo a FCFM y nota.</p>
-        {teachersMsg && (
-          <div className={`px-3 py-2 rounded text-sm mb-3 ${teachersMsg.type === "ok" ? "bg-green-50 border border-green-200 text-green-800" : "bg-red-50 border border-red-200 text-red-800"}`}>
-            {teachersMsg.text}
+      {teachersMsg && (
+        <div className={`px-4 py-3 rounded-lg text-sm ${teachersMsg.type === "ok" ? "bg-green-50 border border-green-200 text-green-800" : "bg-red-50 border border-red-200 text-red-800"}`}>
+          {teachersMsg.text}
+        </div>
+      )}
+
+      {/* Sección Carga Masiva de Profesores (Opción 1) */}
+      <div className="border border-indigo-100 rounded-xl bg-gradient-to-r from-indigo-50/50 via-white to-sky-50/40 p-5 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-900 flex items-center gap-2">
+              <span>📋</span> Carga Masiva del Padrón Docente
+            </h2>
+            <p className="text-xs text-zinc-600 mt-0.5">
+              Sube la lista oficial en <strong>Excel (.xlsx, .xls)</strong> o <strong>CSV</strong>. Da de alta profesores nuevos y actualiza correos, teléfonos o nombres sin alterar peticiones previas.
+            </p>
+          </div>
+          <button
+            onClick={handleDownloadTemplate}
+            className="self-start md:self-auto text-xs text-indigo-700 hover:text-indigo-900 underline font-medium"
+          >
+            Obtener formato de ejemplo (.csv)
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-lg border border-zinc-200">
+          <input
+            id="bulk-teacher-input"
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            onChange={(e) => setBulkFile(e.target.files?.[0] || null)}
+            className="text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-zinc-100 file:text-zinc-700 hover:file:bg-zinc-200 cursor-pointer"
+          />
+          <button
+            onClick={handleBulkUpload}
+            disabled={!bulkFile || bulkLoading}
+            className="px-4 py-2 rounded-md bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 transition shadow-sm"
+          >
+            {bulkLoading ? "Procesando padrón..." : "Subir e Importar Profesores"}
+          </button>
+        </div>
+
+        {/* Resumen del último resultado */}
+        {bulkSummary && (
+          <div className="mt-4 p-4 rounded-lg bg-white border border-zinc-200 text-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-zinc-800">Resultado de la importación:</span>
+              {bulkSummary.errorCount > 0 && (
+                <button
+                  onClick={() => setShowErrorDetails(!showErrorDetails)}
+                  className="text-red-600 hover:underline font-medium"
+                >
+                  {showErrorDetails ? "Ocultar detalles de errores" : `Ver ${bulkSummary.errorCount} errores`}
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <span className="px-2.5 py-1 rounded-md bg-zinc-100 text-zinc-700 font-medium">
+                Filas analizadas: {bulkSummary.totalRows}
+              </span>
+              <span className="px-2.5 py-1 rounded-md bg-green-50 border border-green-200 text-green-700 font-medium">
+                ✓ {bulkSummary.createdCount} Nuevos Creados
+              </span>
+              <span className="px-2.5 py-1 rounded-md bg-blue-50 border border-blue-200 text-blue-700 font-medium">
+                ↺ {bulkSummary.updatedCount} Actualizados
+              </span>
+              {bulkSummary.skippedCount > 0 && (
+                <span className="px-2.5 py-1 rounded-md bg-zinc-100 text-zinc-500 font-medium">
+                  {bulkSummary.skippedCount} Omitidos (vacíos)
+                </span>
+              )}
+              {bulkSummary.errorCount > 0 && (
+                <span className="px-2.5 py-1 rounded-md bg-red-50 border border-red-200 text-red-700 font-medium">
+                  ✕ {bulkSummary.errorCount} Errores
+                </span>
+              )}
+            </div>
+
+            {showErrorDetails && bulkSummary.errorCount > 0 && (
+              <div className="mt-2 border rounded p-2 bg-red-50/50 max-h-40 overflow-auto space-y-1">
+                <div className="font-medium text-red-900 pb-1 border-b border-red-200">Filas con observaciones:</div>
+                {bulkSummary.results
+                  .filter((r) => !r.success)
+                  .map((err, idx) => (
+                    <div key={idx} className="text-red-700 flex gap-2">
+                      <span className="font-semibold">Fila {err.rowNumber}:</span>
+                      <span>{err.error}</span>
+                      {err.employeeId && <span className="text-zinc-500">({err.employeeId})</span>}
+                    </div>
+                  ))}
+              </div>
+            )}
           </div>
         )}
+      </div>
+
+      {/* Sección Manual */}
+      <div className="border rounded-lg bg-white p-4">
+        <h2 className="font-semibold text-sm mb-3">Alta Individual y Edición Rápida</h2>
         {/* Alta de docente */}
         <div className="flex flex-wrap items-end gap-2 mb-4 pb-3 border-b">
           <div>
             <label className="text-xs font-medium block">No. empleado *</label>
-            <input value={newTeacher.employeeId} onChange={(e) => setNewTeacher((p) => ({ ...p, employeeId: e.target.value }))} className="w-28 border rounded px-2 py-1.5 text-sm" placeholder="COL123456" />
+            <input value={newTeacher.employeeId} onChange={(e) => setNewTeacher((p) => ({ ...p, employeeId: e.target.value }))} className="w-28 border rounded px-2 py-1.5 text-sm" placeholder="100345678" />
           </div>
           <div>
             <label className="text-xs font-medium block">Nombre *</label>
-            <input value={newTeacher.name} onChange={(e) => setNewTeacher((p) => ({ ...p, name: e.target.value }))} className="w-52 border rounded px-2 py-1.5 text-sm" />
+            <input value={newTeacher.name} onChange={(e) => setNewTeacher((p) => ({ ...p, name: e.target.value }))} className="w-52 border rounded px-2 py-1.5 text-sm" placeholder="APELLIDOS NOMBRE" />
           </div>
           <div>
             <label className="text-xs font-medium block">Email *</label>
-            <input value={newTeacher.email} onChange={(e) => setNewTeacher((p) => ({ ...p, email: e.target.value }))} className="w-56 border rounded px-2 py-1.5 text-sm" />
+            <input value={newTeacher.email} onChange={(e) => setNewTeacher((p) => ({ ...p, email: e.target.value }))} className="w-56 border rounded px-2 py-1.5 text-sm" placeholder="profesor@correo.buap.mx" />
           </div>
           <div>
             <label className="text-xs font-medium block">Celular</label>
-            <input value={newTeacher.phone} onChange={(e) => setNewTeacher((p) => ({ ...p, phone: e.target.value }))} className="w-32 border rounded px-2 py-1.5 text-sm" />
+            <input value={newTeacher.phone} onChange={(e) => setNewTeacher((p) => ({ ...p, phone: e.target.value }))} className="w-32 border rounded px-2 py-1.5 text-sm" placeholder="2221234567" />
           </div>
           <div>
             <label className="text-xs font-medium block">Adscripción</label>
@@ -132,6 +304,31 @@ export default function TeachersPage() {
             Agregar
           </button>
         </div>
+
+        {/* Buscador / Filtro */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+          <div className="relative flex-1 max-w-md">
+            <input
+              type="text"
+              placeholder="🔍 Buscar por nombre, No. de empleado, correo o celular..."
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              className="w-full border rounded-lg px-3 py-1.5 text-xs bg-zinc-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+            {filterText && (
+              <button
+                onClick={() => setFilterText("")}
+                className="absolute right-2.5 top-1.5 text-xs text-zinc-400 hover:text-zinc-700"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <div className="text-xs text-zinc-500">
+            Mostrando <strong>{filteredTeachers.length}</strong> de <strong>{teachersAdmin.length}</strong> docentes
+          </div>
+        </div>
+
         {/* Tabla de docentes */}
         <div className="overflow-auto max-h-[32rem] border rounded">
           <table className="w-full text-xs">
@@ -148,7 +345,7 @@ export default function TeachersPage() {
               </tr>
             </thead>
             <tbody>
-              {teachersAdmin.map((t) => {
+              {filteredTeachers.map((t) => {
                 const edit = teacherEdit[t.id] || {};
                 const val = (k: keyof NewTeacher, cur: string | null) => (edit[k] !== undefined ? String(edit[k]) : cur ?? "");
                 const dirty = Object.keys(edit).length > 0;
@@ -183,9 +380,11 @@ export default function TeachersPage() {
                   </tr>
                 );
               })}
-              {teachersAdmin.length === 0 && (
+              {filteredTeachers.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-4 text-center text-zinc-500">Sin docentes registrados</td>
+                  <td colSpan={8} className="px-3 py-4 text-center text-zinc-500">
+                    {filterText ? "No se encontraron docentes con el criterio de búsqueda." : "Sin docentes registrados"}
+                  </td>
                 </tr>
               )}
             </tbody>

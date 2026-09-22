@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     }
 
     let lockedList: Array<{ courseId: number; teacherId: number }> = [];
-    if (Array.isArray(locked) && locked.length > 0) {
+    if (Array.isArray(locked)) {
       lockedList = locked.map((l) => ({ courseId: Number(l.courseId), teacherId: Number(l.teacherId) })).filter((l) => !Number.isNaN(l.courseId) && !Number.isNaN(l.teacherId));
     } else if (singleCourseId && singleTeacherId) {
       lockedList = [{ courseId: singleCourseId, teacherId: singleTeacherId }];
@@ -30,11 +30,26 @@ export async function POST(req: Request) {
     const semester = await prisma.semester.findUnique({ where: { id: semesterId } });
     if (!semester) return NextResponse.json({ error: "Semestre no encontrado" }, { status: 404 });
 
-    // Validar que los locked correspondan a petitions de ese slot y semestre y que curso no esté asignado en otro slot
+    // Validar que los locked correspondan a petitions de ese slot y semestre (o crearlas si es reasignación con visto bueno) y que curso no esté asignado en otro slot
     for (const l of lockedList) {
-      const petition = await prisma.petition.findFirst({ where: { teacherId: l.teacherId, courseId: l.courseId, semesterId, slotNo } });
+      let petition = await prisma.petition.findFirst({ where: { teacherId: l.teacherId, courseId: l.courseId, semesterId, slotNo } });
       if (!petition) {
-        return NextResponse.json({ error: `Petition no encontrada para teacher ${l.teacherId} curso ${l.courseId} slot ${slotNo}` }, { status: 404 });
+        // Asignación administrativa / reasignación con visto bueno
+        const maxPrio = await prisma.petition.aggregate({
+          where: { teacherId: l.teacherId, semesterId, slotNo },
+          _max: { priority: true },
+        });
+        // La prioridad reglamentaria debe ser 1, 2 o 3 (máximo 3)
+        const nextPrio = Math.min(3, Math.max(1, (maxPrio._max.priority ?? 0) + 1));
+        petition = await prisma.petition.create({
+          data: {
+            teacherId: l.teacherId,
+            courseId: l.courseId,
+            semesterId,
+            slotNo,
+            priority: nextPrio,
+          },
+        });
       }
       const alreadyAssignedOtherSlot = await prisma.assignment.findFirst({ where: { courseId: l.courseId, semesterId, NOT: { slotNo } } });
       if (alreadyAssignedOtherSlot) {
@@ -62,7 +77,26 @@ export async function POST(req: Request) {
       await persistAsignaciones(result, tx);
     });
 
-    return NextResponse.json({ ok: true, message: `Slot ${slotNo} recalculado con ${lockedList.length} bloqueos`, ...result });
+    const p1Count = result.asignados.filter((a) => a.priority === 1).length;
+    const p2Count = result.asignados.filter((a) => a.priority === 2).length;
+    const p3Count = result.asignados.filter((a) => a.priority === 3).length;
+    const avgPuntaje = result.asignados.length
+      ? Math.round(result.asignados.reduce((sum, a) => sum + a.puntaje, 0) / result.asignados.length)
+      : 0;
+
+    return NextResponse.json({
+      ok: true,
+      message: `Slot ${slotNo} recalculado con ${lockedList.length} bloqueos`,
+      stats: {
+        totalAsignados: result.asignados.length,
+        cursosRestantes: result.cursosRestantes,
+        p1Count,
+        p2Count,
+        p3Count,
+        avgPuntaje,
+      },
+      ...result,
+    });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: String(e instanceof Error ? e.message : "Error interno") }, { status: 500 });

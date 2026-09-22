@@ -50,7 +50,7 @@ model Teacher {
   phone       String? // celular opcional
   affiliation String     @default("Interno") // Interno | Externo a FCFM
   note        String? // nota pequeña
-  expYears    Int        @default(0) // legacy global, ahora usar TeacherCourseExp por curso
+  expPeriods  Int        @default(0) // legacy global, ahora usar TeacherCourseExp por curso
   createdAt   DateTime   @default(now())
   petitions Petition[]
   assignments Assignment[]
@@ -64,7 +64,7 @@ model TeacherCourseExp {
   teacherId Int
   teacher   Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   courseCode String // code de la materia (ej MAT101) - experiencia por curso
-  years     Int     @default(0)
+  periods   Int     @default(0) // periodos impartidos en los últimos 4 años
   createdAt DateTime @default(now())
 
   @@unique([teacherId, courseCode])
@@ -85,7 +85,7 @@ model Petition {
   createdAt  DateTime  @default(now())
   assignment Assignment?
 
-  @@unique([teacherId, semesterId, courseId]) // no duplicate course across slots for same teacher+semester
+  @@unique([teacherId, semesterId, slotNo, courseId]) // allows same course in different slots, but not within same slot
   @@index([teacherId, semesterId, slotNo])
   @@index([semesterId])
   @@map("petitions")

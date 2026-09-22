@@ -19,7 +19,8 @@ PUNTOS_BASE = {
     Prioridad.P2: 60,
     Prioridad.P3: 30,
 }
-BONO_DESPLAZAMIENTO = 100  # Guía.txt:9
+BONO_DESPLAZAMIENTO = 40  # Nivelador P2: 60 + 40 = 100
+BONO_DESPLAZAMIENTO_P3 = 70  # Nivelador P3: 30 + 70 = 100
 BONO_FLEX_ULTIMA = 30      # Guía.txt:11 premio
 PENALIZACION_FLEX_CON_RESPALDO = -15  # cede paso
 MAX_EXP = 10               # Guía.txt:8
@@ -51,7 +52,7 @@ def bono_desplazamiento(s: Solicitud, flex_prev_perdida: bool = False) -> int:
     if s.prioridad == Prioridad.P2 and s.perdio_p1:
         base = BONO_DESPLAZAMIENTO
     if s.prioridad == Prioridad.P3 and (s.perdio_p1 or s.perdio_p2):
-        base = BONO_DESPLAZAMIENTO
+        base = BONO_DESPLAZAMIENTO_P3
     flex_desplazado = BONO_FLEX_ULTIMA if flex_prev_perdida else 0
     return base + flex_desplazado
 

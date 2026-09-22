@@ -1,8 +1,30 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-// GET /api/teachers - lista de profesores
-export async function GET() {
+// GET /api/teachers - lista de profesores o búsqueda por employeeId
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const employeeId = searchParams.get("employeeId") || searchParams.get("employee_id");
+
+  if (employeeId) {
+    const norm = employeeId.trim().toUpperCase();
+    const teacher = await prisma.teacher.findFirst({
+      where: {
+        OR: [
+          { employeeId: norm },
+          { employeeId: employeeId.trim() },
+        ],
+      },
+      include: {
+        _count: { select: { petitions: true, assignments: true } },
+      },
+    });
+    if (!teacher) {
+      return NextResponse.json({ error: "Docente no encontrado" }, { status: 404 });
+    }
+    return NextResponse.json(teacher);
+  }
+
   const teachers = await prisma.teacher.findMany({
     orderBy: { name: "asc" },
     include: {

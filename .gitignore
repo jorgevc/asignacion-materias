@@ -51,3 +51,10 @@ next-env.d.ts
 .agents/
 .claude/
 .windsurf/
+
+# Data files with personal / schedule information
+*.xlsx
+*.xls
+*.csv
+Programacion Academica Historica/
+

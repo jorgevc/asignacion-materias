@@ -12,8 +12,8 @@ def calcular_peso(prioridad, num_opciones_nivel, es_ultima_opcion_nivel, perdio_
             p_desplazamiento = 20
             p_flexibilidad = -15
         else:
-            # Caso: Es su última P2 (o era rígido) -> Bono completo para proteger su P2
-            p_desplazamiento = 100
+            # Caso: Es su última P2 (o era rígido) -> Bono de nivelación para competir con P1 por méritos
+            p_desplazamiento = 40
             if num_opciones_nivel > 1 and es_ultima_opcion_nivel:
                 p_flexibilidad = 30
 

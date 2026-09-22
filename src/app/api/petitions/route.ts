@@ -8,25 +8,62 @@ type SlotInput = {
 
 class PetitionsLockedError extends Error {}
 
-// GET /api/petitions?email=...&semesterId=...
+// GET /api/petitions?employeeId=...&email=...&semesterId=...
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
+  const employeeId = searchParams.get("employeeId") || searchParams.get("employee_id");
   const email = searchParams.get("email");
-  const semesterId = searchParams.get("semesterId") || searchParams.get("semester_id");
+  const semesterIdParam = searchParams.get("semesterId") || searchParams.get("semester_id");
 
-  if (!email || !semesterId) {
-    return NextResponse.json({ error: "email and semesterId required" }, { status: 400 });
+  if (!employeeId && !email) {
+    return NextResponse.json({ error: "employeeId o email requerido" }, { status: 400 });
   }
 
-  const id = Number(semesterId);
-  const teacher = await prisma.teacher.findUnique({ where: { email: email.toLowerCase().trim() } });
-  if (!teacher) return NextResponse.json({ slots: [] });
+  let sid: number;
+  if (semesterIdParam) {
+    sid = Number(semesterIdParam);
+    if (Number.isNaN(sid)) return NextResponse.json({ error: "semesterId inválido" }, { status: 400 });
+  } else {
+    const active = await prisma.semester.findFirst({ where: { isActive: true } });
+    if (!active) return NextResponse.json({ error: "No hay un semestre activo" }, { status: 404 });
+    sid = active.id;
+  }
+
+  let teacher = null;
+  if (employeeId) {
+    const empNorm = employeeId.trim().toUpperCase();
+    teacher = await prisma.teacher.findFirst({
+      where: {
+        OR: [
+          { employeeId: empNorm },
+          { employeeId: employeeId.trim() },
+        ],
+      },
+    });
+  }
+
+  if (!teacher && email) {
+    teacher = await prisma.teacher.findUnique({
+      where: { email: email.toLowerCase().trim() },
+    });
+  }
+
+  if (!teacher) {
+    return NextResponse.json({
+      teacher: null,
+      isSubmitted: false,
+      slots: [],
+    });
+  }
 
   const petitions = await prisma.petition.findMany({
-    where: { teacherId: teacher.id, semesterId: id },
+    where: { teacherId: teacher.id, semesterId: sid },
     include: { course: true },
     orderBy: [{ slotNo: "asc" }, { id: "asc" }],
   });
+
+  const isSubmitted = petitions.length > 0;
+  const submittedAt = petitions.length > 0 ? petitions[0].createdAt : null;
 
   // Group by slotNo
   const grouped = new Map<number, typeof petitions>();
@@ -47,93 +84,154 @@ export async function GET(req: Request) {
     }));
 
   return NextResponse.json({
-    teacher: { id: teacher.id, email: teacher.email, name: teacher.name },
+    teacher: {
+      id: teacher.id,
+      employeeId: teacher.employeeId,
+      email: teacher.email,
+      name: teacher.name,
+      phone: teacher.phone,
+    },
+    isSubmitted,
+    submittedAt,
     slots,
   });
 }
 
 // POST /api/petitions
-// body: { email, name, semesterId, slots: [{slot_no, options:[{courseId, priority}]}] }
+// body: { employeeId, email, name, phone, semesterId, slots: [{slot_no, options:[{courseId, priority}]}] }
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { email, name, semesterId, slots } = body as {
-      email: string;
-      name: string;
-      semesterId: number;
-      slots: SlotInput[];
+    const { employeeId, email, name, phone, semesterId, slots } = body as {
+      employeeId?: string;
+      email?: string;
+      name?: string;
+      phone?: string;
+      semesterId?: number;
+      slots?: SlotInput[];
     };
 
-    if (!email || !name || !semesterId || !slots) {
-      return NextResponse.json({ error: "email, name, semesterId, slots required" }, { status: 400 });
+    if (!employeeId && !email) {
+      return NextResponse.json({ error: "No. de Trabajador o email es requerido" }, { status: 400 });
+    }
+    if (!name || !slots) {
+      return NextResponse.json({ error: "Nombre y slots son requeridos" }, { status: 400 });
     }
 
-    const emailNorm = email.toLowerCase().trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) {
-      return NextResponse.json({ error: "Invalid email" }, { status: 400 });
-    }
-    if (emailNorm.length > 255) {
-      return NextResponse.json({ error: "Email too long" }, { status: 400 });
+    const empNorm = employeeId ? employeeId.trim().toUpperCase() : null;
+    const emailNorm = email ? email.toLowerCase().trim() : "";
+    if (emailNorm && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) {
+      return NextResponse.json({ error: "Email inválido" }, { status: 400 });
     }
 
     const nameNorm = name.trim();
-    if (nameNorm.length > 255) {
-      return NextResponse.json({ error: "Name too long" }, { status: 400 });
+    if (nameNorm.length === 0 || nameNorm.length > 255) {
+      return NextResponse.json({ error: "Nombre inválido" }, { status: 400 });
     }
 
-    const sid = Number(semesterId);
-    if (Number.isNaN(sid)) return NextResponse.json({ error: "Invalid semesterId" }, { status: 400 });
+    const phoneNorm = phone && String(phone).trim() ? String(phone).trim().slice(0, 50) : null;
+
+    let sid: number;
+    if (semesterId) {
+      sid = Number(semesterId);
+      if (Number.isNaN(sid)) return NextResponse.json({ error: "semesterId inválido" }, { status: 400 });
+    } else {
+      const active = await prisma.semester.findFirst({ where: { isActive: true } });
+      if (!active) return NextResponse.json({ error: "No hay un semestre activo configurado" }, { status: 404 });
+      sid = active.id;
+    }
 
     const semester = await prisma.semester.findUnique({ where: { id: sid } });
-    if (!semester) return NextResponse.json({ error: "Semester not found" }, { status: 404 });
+    if (!semester) return NextResponse.json({ error: "Semestre no encontrado" }, { status: 404 });
+    if (!semester.isActive) {
+      return NextResponse.json({ error: "El semestre seleccionado no está activo para recepción de solicitudes." }, { status: 400 });
+    }
 
     // Validation: slots must be 1-3, slot 1 required with exactly 3 options, slots 2,3 either absent or exactly 3
     if (!Array.isArray(slots) || slots.length === 0) {
-      return NextResponse.json({ error: "At least slot 1 required" }, { status: 400 });
+      return NextResponse.json({ error: "La Solicitud 1 es obligatoria" }, { status: 400 });
     }
 
     const slotNos = slots.map((s) => s.slot_no).sort();
     if (!slotNos.includes(1)) {
-      return NextResponse.json({ error: "Slot 1 is required with 3 classes" }, { status: 400 });
+      return NextResponse.json({ error: "La Solicitud 1er Curso es obligatoria" }, { status: 400 });
     }
     const uniqueSlotNos = new Set(slotNos);
     if (uniqueSlotNos.size !== slots.length) {
-      return NextResponse.json({ error: "Duplicate slot_no" }, { status: 400 });
+      return NextResponse.json({ error: "Número de slot duplicado" }, { status: 400 });
     }
     for (const s of slots) {
       if (![1, 2, 3].includes(s.slot_no)) {
-        return NextResponse.json({ error: "slot_no must be 1,2,3" }, { status: 400 });
+        return NextResponse.json({ error: "El número de solicitud debe ser 1, 2 o 3" }, { status: 400 });
       }
-      if (!Array.isArray(s.options) || s.options.length !== 3) {
-        return NextResponse.json({ error: `Slot ${s.slot_no} must have exactly 3 classes` }, { status: 400 });
+      if (!Array.isArray(s.options)) {
+        return NextResponse.json({ error: `La Solicitud ${s.slot_no} tiene un formato de opciones inválido` }, { status: 400 });
       }
-      for (const opt of s.options) {
-        if (!opt.courseId || ![1, 2, 3].includes(Number(opt.priority))) {
-          return NextResponse.json({ error: `Slot ${s.slot_no}: each option requires courseId and priority 1-3` }, { status: 400 });
+      // Filtrar opciones válidas (descartando opciones vacías con courseId null, 0 o vacío)
+      const validOptions = s.options.filter((o) => o && o.courseId && Number(o.courseId) > 0);
+      if (validOptions.length === 0) {
+        return NextResponse.json({ error: `La Solicitud ${s.slot_no} debe tener al menos 1 curso seleccionado` }, { status: 400 });
+      }
+      if (validOptions.length > 3) {
+        return NextResponse.json({ error: `La Solicitud ${s.slot_no} no puede exceder 3 opciones` }, { status: 400 });
+      }
+      for (const opt of validOptions) {
+        if (![1, 2, 3].includes(Number(opt.priority))) {
+          return NextResponse.json({ error: `Solicitud ${s.slot_no}: cada curso requiere prioridad 1-3` }, { status: 400 });
         }
       }
-      const courseIdsInSlot = s.options.map((o) => o.courseId);
-      if (new Set(courseIdsInSlot).size !== 3) {
-        return NextResponse.json({ error: `Slot ${s.slot_no}: duplicate course` }, { status: 400 });
+      const courseIdsInSlot = validOptions.map((o) => Number(o.courseId));
+      if (new Set(courseIdsInSlot).size !== courseIdsInSlot.length) {
+        return NextResponse.json({ error: `Solicitud ${s.slot_no}: no se puede repetir el mismo curso dentro de la misma solicitud` }, { status: 400 });
       }
     }
 
-    const allCourseIds = slots.flatMap((s) => s.options.map((o) => o.courseId));
-    if (new Set(allCourseIds).size !== allCourseIds.length) {
-      return NextResponse.json({ error: "Same course cannot be requested in multiple slots" }, { status: 400 });
-    }
-
+    // Se permite tener cursos duplicados en diferentes slots porque las rondas de asignación se realizan de forma independiente
+    const allCourseIds = Array.from(new Set(slots.flatMap((s) => s.options.filter((o) => o && o.courseId && Number(o.courseId) > 0).map((o) => Number(o.courseId)))));
     const courses = await prisma.course.findMany({
       where: { id: { in: allCourseIds }, semesterId: sid },
     });
     if (courses.length !== allCourseIds.length) {
-      return NextResponse.json({ error: "One or more courses not found for this semester" }, { status: 400 });
+      return NextResponse.json({ error: "Uno o más cursos no corresponden a este semestre" }, { status: 400 });
     }
 
-    const existingTeacher = await prisma.teacher.findUnique({ where: { email: emailNorm } });
-    if (existingTeacher) {
+    // Identify or create teacher
+    let teacher = null;
+    if (empNorm) {
+      teacher = await prisma.teacher.findFirst({
+        where: {
+          OR: [{ employeeId: empNorm }, { employeeId: employeeId?.trim() }],
+        },
+      });
+    }
+    if (!teacher && emailNorm) {
+      const byEmail = await prisma.teacher.findUnique({ where: { email: emailNorm } });
+      if (byEmail) {
+        if (empNorm && byEmail.employeeId && byEmail.employeeId !== empNorm) {
+          return NextResponse.json(
+            { error: `El correo ${emailNorm} ya pertenece al docente ${byEmail.name} con No. de Trabajador ${byEmail.employeeId}. Por favor verifica tu No. de Trabajador o utiliza tu correo correspondiente.` },
+            { status: 409 }
+          );
+        }
+        teacher = byEmail;
+      }
+    }
+
+    if (teacher) {
+      // Bloqueo estricto de modificación: si ya tiene peticiones para este semestre, RECHAZAR
+      const existingPetitionsCount = await prisma.petition.count({
+        where: { teacherId: teacher.id, semesterId: sid },
+      });
+      if (existingPetitionsCount > 0) {
+        return NextResponse.json(
+          { error: "Tus solicitudes para este semestre ya fueron enviadas y no se pueden modificar. Contacta a la coordinación académica si requieres una aclaración." },
+          { status: 409 }
+        );
+      }
+
+      // Validar si ya tiene asignaciones generadas
       const assignmentCount = await prisma.assignment.count({
-        where: { teacherId: existingTeacher.id, semesterId: sid },
+        where: { teacherId: teacher.id, semesterId: sid },
       });
       if (assignmentCount > 0) {
         return NextResponse.json(
@@ -141,33 +239,49 @@ export async function POST(req: Request) {
           { status: 409 }
         );
       }
+
+      // Actualizar datos de contacto del docente
+      const updateData: Record<string, string | null> = { name: nameNorm };
+      if (phoneNorm !== null) updateData.phone = phoneNorm;
+      if (empNorm && !teacher.employeeId) updateData.employeeId = empNorm;
+      if (emailNorm && !teacher.email) updateData.email = emailNorm;
+
+      teacher = await prisma.teacher.update({
+        where: { id: teacher.id },
+        data: updateData,
+      });
+    } else {
+      // Si el docente no existe, crear nuevo
+      const effectiveEmail = emailNorm || `${empNorm?.toLowerCase()}@correo.buap.mx`;
+      teacher = await prisma.teacher.create({
+        data: {
+          employeeId: empNorm,
+          email: effectiveEmail,
+          name: nameNorm,
+          phone: phoneNorm,
+        },
+      });
     }
 
-    const teacher = await prisma.teacher.upsert({
-      where: { email: emailNorm },
-      update: { name: nameNorm },
-      create: { email: emailNorm, name: nameNorm },
-    });
-
+    // Insertar peticiones dentro de transacción
     await prisma.$transaction(async (tx) => {
-      const assignmentCount = await tx.assignment.count({
+      // Doble chequeo de concurrencia
+      const count = await tx.petition.count({
         where: { teacherId: teacher.id, semesterId: sid },
       });
-      if (assignmentCount > 0) {
+      if (count > 0) {
         throw new PetitionsLockedError();
       }
-      await tx.petition.deleteMany({
-        where: { teacherId: teacher.id, semesterId: sid },
-      });
 
       for (const slot of slots) {
-        for (const opt of slot.options) {
+        const validOptions = slot.options.filter((o) => o && o.courseId && Number(o.courseId) > 0);
+        for (const opt of validOptions) {
           await tx.petition.create({
             data: {
               teacherId: teacher.id,
               semesterId: sid,
               slotNo: slot.slot_no,
-              courseId: opt.courseId,
+              courseId: Number(opt.courseId),
               priority: Number(opt.priority),
             },
           });
@@ -200,13 +314,21 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      teacher: { id: teacher.id, email: teacher.email, name: teacher.name },
+      isSubmitted: true,
+      submittedAt: petitions[0]?.createdAt ?? new Date(),
+      teacher: {
+        id: teacher.id,
+        employeeId: teacher.employeeId,
+        email: teacher.email,
+        name: teacher.name,
+        phone: teacher.phone,
+      },
       slots: resultSlots,
     });
   } catch (e) {
     if (e instanceof PetitionsLockedError) {
       return NextResponse.json(
-        { error: "No se pueden guardar las peticiones: este docente ya tiene asignaciones en este semestre. Contacte al administrador." },
+        { error: "Tus solicitudes para este semestre ya fueron enviadas y no se pueden modificar." },
         { status: 409 }
       );
     }
