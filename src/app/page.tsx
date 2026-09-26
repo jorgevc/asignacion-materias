@@ -849,13 +849,6 @@ export default function Home() {
 
           {/* Formulario de selección de cursos */}
           <form onSubmit={handlePreSubmit} className="space-y-6">
-            <div className="bg-blue-50 border-l-4 border-blue-600 p-4 rounded-r-lg text-xs text-blue-900">
-              <p className="font-bold mb-0.5">⚠️ Aviso importante sobre el envío de solicitudes:</p>
-              <p>
-                Una vez enviada la solicitud, no podrá ser editada por medio de esta plataforma. Revisar antes de enviar.
-              </p>
-            </div>
-
             {renderSlotCapture(1, true)}
             {renderSlotCapture(2, enabledSlot2, setEnabledSlot2)}
             {renderSlotCapture(3, enabledSlot3, setEnabledSlot3)}
