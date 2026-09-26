@@ -112,3 +112,32 @@ model Assignment {
   @@index([teacherId, semesterId])
   @@map("assignments")
 }
+
+model HistoricalFile {
+  id         Int                @id @default(autoincrement())
+  name       String             @unique
+  sizeBytes  Int                @default(0)
+  rowCount   Int                @default(0)
+  uploadedAt DateTime           @default(now())
+  records    HistoricalRecord[]
+
+  @@map("historical_files")
+}
+
+model HistoricalRecord {
+  id          Int            @id @default(autoincrement())
+  fileId      Int
+  file        HistoricalFile @relation(fields: [fileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sourceFile  String
+  period      Int
+  year        Int
+  employeeId  String?
+  teacherName String?
+  courseCode  String
+  createdAt   DateTime       @default(now())
+
+  @@index([year, courseCode])
+  @@index([fileId])
+  @@index([employeeId])
+  @@map("historical_records")
+}

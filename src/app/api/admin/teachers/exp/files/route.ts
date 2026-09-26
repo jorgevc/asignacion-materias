@@ -1,41 +1,31 @@
 import { NextResponse } from "next/server";
 import path from "path";
-import fs from "fs";
-import { importarExperienciaHistorica } from "@/lib/importadorHistorico";
+import { prisma } from "@/lib/prisma";
+import {
+  ensureHistoricalTablesExist,
+  guardarArchivoHistoricoEnBD,
+  importarExperienciaHistorica,
+} from "@/lib/importadorHistorico";
 
 const ALLOWED_EXTS = [".csv", ".xlsx", ".xls"];
 
-function getHistoricoDir() {
-  const dir = path.join(process.cwd(), "Programacion Academica Historica");
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return dir;
-}
-
-// GET: Listar archivos existentes en 'Programacion Academica Historica'
+// GET: Listar archivos históricos guardados en la Base de Datos
 export async function GET() {
   try {
-    const dir = getHistoricoDir();
-    const fileNames = fs.readdirSync(dir).filter((f) => {
-      const lower = f.toLowerCase();
-      return !lower.startsWith("~$") && ALLOWED_EXTS.some((ext) => lower.endsWith(ext));
+    await ensureHistoricalTablesExist();
+
+    const dbFiles = await prisma.historicalFile.findMany({
+      orderBy: { name: "asc" },
     });
 
-    const files = fileNames.map((name) => {
-      const fullPath = path.join(dir, name);
-      const stat = fs.statSync(fullPath);
-      return {
-        name,
-        sizeBytes: stat.size,
-        sizeFormatted: (stat.size / 1024).toFixed(1) + " KB",
-        updatedAt: stat.mtime.toISOString(),
-        extension: path.extname(name).toLowerCase(),
-      };
-    });
-
-    // Ordenar por nombre
-    files.sort((a, b) => a.name.localeCompare(b.name));
+    const files = dbFiles.map((f) => ({
+      name: f.name,
+      sizeBytes: f.sizeBytes,
+      sizeFormatted: (f.sizeBytes / 1024).toFixed(1) + " KB",
+      updatedAt: f.uploadedAt.toISOString(),
+      rowCount: f.rowCount,
+      extension: path.extname(f.name).toLowerCase(),
+    }));
 
     return NextResponse.json({ ok: true, files });
   } catch (err: any) {
@@ -44,7 +34,7 @@ export async function GET() {
   }
 }
 
-// POST: Subir o actualizar un archivo de programación académica
+// POST: Subir o actualizar un archivo histórico procesándolo en memoria y persistiendo en la BD
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
@@ -64,16 +54,14 @@ export async function POST(req: Request) {
       );
     }
 
-    // Nombre seguro sin caracteres de ruta
     const safeName = path.basename(originalName);
-    const dir = getHistoricoDir();
-    const destPath = path.join(dir, safeName);
-    const fileExistsBefore = fs.existsSync(destPath);
 
-    // Escribir archivo
+    // Leer directamente en memoria RAM (Buffer) sin tocar el disco del contenedor
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    fs.writeFileSync(destPath, buffer);
+
+    // Guardar registros del archivo en la base de datos
+    const { rowCount, wasReplaced } = await guardarArchivoHistoricoEnBD(safeName, buffer);
 
     let importResult = null;
     if (autoRecalculate) {
@@ -84,21 +72,23 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       fileName: safeName,
-      wasReplaced: fileExistsBefore,
-      message: fileExistsBefore
-        ? `Archivo '${safeName}' actualizado exitosamente.`
-        : `Archivo '${safeName}' subido exitosamente.`,
+      wasReplaced,
+      message: wasReplaced
+        ? `Archivo '${safeName}' actualizado en la base de datos (${rowCount} materias/secciones registradas).`
+        : `Archivo '${safeName}' subido y guardado en la base de datos (${rowCount} materias/secciones registradas).`,
       importResult,
     });
   } catch (err: any) {
-    console.error("Error al subir archivo histórico:", err);
-    return NextResponse.json({ error: err.message || "Error al guardar el archivo" }, { status: 500 });
+    console.error("Error al procesar archivo histórico:", err);
+    return NextResponse.json({ error: err.message || "Error al procesar el archivo" }, { status: 500 });
   }
 }
 
-// DELETE: Eliminar un archivo erróneo
+// DELETE: Eliminar un archivo histórico de la base de datos y recalcular
 export async function DELETE(req: Request) {
   try {
+    await ensureHistoricalTablesExist();
+
     const { searchParams } = new URL(req.url);
     const fileName = searchParams.get("fileName");
     const autoRecalculate = searchParams.get("autoRecalculate") === "true";
@@ -108,14 +98,19 @@ export async function DELETE(req: Request) {
     }
 
     const safeName = path.basename(fileName);
-    const dir = getHistoricoDir();
-    const filePath = path.join(dir, safeName);
 
-    if (!fs.existsSync(filePath)) {
-      return NextResponse.json({ error: `El archivo '${safeName}' no existe` }, { status: 404 });
+    const existing = await prisma.historicalFile.findUnique({
+      where: { name: safeName },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: `El archivo '${safeName}' no existe en la base de datos` }, { status: 404 });
     }
 
-    fs.unlinkSync(filePath);
+    // Al eliminar el archivo, la relación con onDelete: Cascade elimina automáticamente sus historical_records
+    await prisma.historicalFile.delete({
+      where: { id: existing.id },
+    });
 
     let importResult = null;
     if (autoRecalculate) {
@@ -125,7 +120,7 @@ export async function DELETE(req: Request) {
     return NextResponse.json({
       ok: true,
       fileName: safeName,
-      message: `Archivo '${safeName}' eliminado exitosamente.`,
+      message: `Archivo '${safeName}' eliminado exitosamente de la base de datos.`,
       importResult,
     });
   } catch (err: any) {

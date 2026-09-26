@@ -566,14 +566,20 @@ export default function AdminPage() {
   };
 
   const fetchTeachersExp = async () => {
-    if (!semesterId) return;
-    const res = await fetch(`/api/admin/teachers/exp?semesterId=${semesterId}`);
-    const j = await res.json();
-    if (Array.isArray(j)) setTeachersExp(j);
+    try {
+      const url = semesterId
+        ? `/api/admin/teachers/exp?semesterId=${semesterId}`
+        : `/api/admin/teachers/exp`;
+      const res = await fetch(url);
+      const j = await res.json();
+      if (Array.isArray(j)) setTeachersExp(j);
+    } catch (e) {
+      console.error("Error al obtener experiencia docente:", e);
+    }
   };
 
   useEffect(() => {
-    if (semesterId) fetchTeachersExp();
+    fetchTeachersExp();
   }, [semesterId, data]);
 
   const handleUpdateExp = async (email: string) => {

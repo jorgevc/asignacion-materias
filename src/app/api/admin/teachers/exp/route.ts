@@ -4,7 +4,9 @@ import { prisma } from "@/lib/prisma";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const semesterId = searchParams.get("semesterId");
-  if (semesterId) {
+  const onlyWithPetitions = searchParams.get("onlyWithPetitions") === "true";
+
+  if (semesterId && onlyWithPetitions) {
     const sid = Number(semesterId);
     if (!Number.isNaN(sid)) {
       const teachers = await prisma.teacher.findMany({
@@ -15,7 +17,12 @@ export async function GET(req: Request) {
       return NextResponse.json(teachers);
     }
   }
-  const all = await prisma.teacher.findMany({ include: { exps: true }, orderBy: { name: "asc" } });
+
+  // Por defecto, retornar todos los docentes con sus antecedentes calculados
+  const all = await prisma.teacher.findMany({
+    include: { exps: true },
+    orderBy: { name: "asc" },
+  });
   return NextResponse.json(all);
 }
 

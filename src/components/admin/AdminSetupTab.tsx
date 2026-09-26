@@ -92,6 +92,7 @@ export default function AdminSetupTab({
   onUpdateExpCourse,
 }: AdminSetupTabProps) {
   const [courseSearch, setCourseSearch] = useState("");
+  const [expSearch, setExpSearch] = useState("");
 
   const filteredCourses = courses.filter((c) => {
     if (!courseSearch) return true;
@@ -458,102 +459,183 @@ export default function AdminSetupTab({
         )}
 
         {/* Tabla de Experiencia por Docente */}
-        <div className="overflow-auto max-h-72 border border-slate-200/80 rounded-2xl bg-white shadow-xs">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-100/80 border-b border-slate-200/80 text-slate-600 sticky top-0 z-10 backdrop-blur-xs">
-              <tr>
-                <th className="px-4 py-2.5 text-left font-bold uppercase tracking-wider text-[10px]">Docente</th>
-                <th className="px-4 py-2.5 text-left font-bold uppercase tracking-wider text-[10px]">Curso (Clave)</th>
-                <th className="px-4 py-2.5 text-center font-bold uppercase tracking-wider text-[10px]">Periodos Impartidos (4 años)</th>
-                <th className="px-4 py-2.5 text-left font-bold uppercase tracking-wider text-[10px]">Acción</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {(() => {
-                const rows: any[] = [];
-                const courseCodesByTeacher = new Map<number, Set<string>>();
-                if (data?.slots) {
-                  for (const s of data.slots) {
-                    for (const o of s.options) {
-                      if (!courseCodesByTeacher.has(s.teacher.id)) {
-                        courseCodesByTeacher.set(s.teacher.id, new Set());
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-700">Registros de Mérito y Antecedentes</span>
+              <span className="text-[11px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
+                {teachersExp.length} docentes
+              </span>
+            </div>
+            <div className="w-full sm:w-64">
+              <input
+                type="text"
+                value={expSearch}
+                onChange={(e) => setExpSearch(e.target.value)}
+                placeholder="Buscar por docente o clave..."
+                className="w-full text-xs px-3 py-1.5 border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs"
+              />
+            </div>
+          </div>
+
+          <div className="overflow-auto max-h-80 border border-slate-200/80 rounded-2xl bg-white shadow-xs">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-100/80 border-b border-slate-200/80 text-slate-600 sticky top-0 z-10 backdrop-blur-xs">
+                <tr>
+                  <th className="px-4 py-2.5 text-left font-bold uppercase tracking-wider text-[10px]">Docente</th>
+                  <th className="px-4 py-2.5 text-left font-bold uppercase tracking-wider text-[10px]">Curso (Clave)</th>
+                  <th className="px-4 py-2.5 text-center font-bold uppercase tracking-wider text-[10px]">Periodos Impartidos (4 años)</th>
+                  <th className="px-4 py-2.5 text-left font-bold uppercase tracking-wider text-[10px]">Acción</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(() => {
+                  const rows: any[] = [];
+                  const query = expSearch.toLowerCase().trim();
+
+                  // Mapear códigos solicitados en el ciclo actual por docente
+                  const requestedCodesByTeacher = new Map<number, Set<string>>();
+                  if (data?.slots) {
+                    for (const s of data.slots) {
+                      for (const o of s.options) {
+                        if (!requestedCodesByTeacher.has(s.teacher.id)) {
+                          requestedCodesByTeacher.set(s.teacher.id, new Set());
+                        }
+                        requestedCodesByTeacher.get(s.teacher.id)!.add(o.course.code);
                       }
-                      courseCodesByTeacher.get(s.teacher.id)!.add(o.course.code);
                     }
                   }
-                }
-                for (const t of teachersExp) {
-                  const codes = courseCodesByTeacher.get(t.id);
-                  if (!codes || codes.size === 0) {
-                    rows.push(
-                      <tr key={`${t.id}-global`} className="bg-amber-50/40">
-                        <td className="px-4 py-2 font-bold text-slate-900">{t.name}</td>
-                        <td className="px-4 py-2 text-slate-500 italic">General (sin solicitudes en este ciclo)</td>
-                        <td className="px-4 py-2 text-center">
-                          <input
-                            type="number"
-                            min={0}
-                            max={20}
-                            value={expEdit[t.email] ?? String(t.expPeriods ?? t.expYears ?? 0)}
-                            onChange={(e) => onExpEditChange(t.email, e.target.value)}
-                            className="w-16 border border-slate-300/80 rounded-lg px-2 py-0.5 text-center font-mono font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                          />
-                        </td>
-                        <td className="px-4 py-2">
-                          <button
-                            onClick={() => onUpdateExp(t.email)}
-                            className="px-3 py-1 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition shadow-2xs cursor-pointer"
-                          >
-                            Guardar
-                          </button>
+
+                  for (const t of teachersExp) {
+                    // Unir todas las materias históricas donde el docente tiene experiencia + las solicitadas en este ciclo
+                    const allCodes = new Set<string>();
+
+                    if (t.exps) {
+                      for (const exp of t.exps) {
+                        if (exp.periods > 0 || (exp.years && exp.years > 0)) {
+                          allCodes.add(exp.courseCode);
+                        }
+                      }
+                    }
+
+                    const requested = requestedCodesByTeacher.get(t.id);
+                    if (requested) {
+                      for (const c of Array.from(requested)) {
+                        allCodes.add(c);
+                      }
+                    }
+
+                    // Filtrado por buscador
+                    const matchesTeacher =
+                      !query ||
+                      t.name.toLowerCase().includes(query) ||
+                      (t.employeeId && t.employeeId.toLowerCase().includes(query)) ||
+                      t.email.toLowerCase().includes(query);
+
+                    if (allCodes.size === 0) {
+                      if (matchesTeacher) {
+                        rows.push(
+                          <tr key={`${t.id}-global`} className="bg-amber-50/40">
+                            <td className="px-4 py-2">
+                              <div className="font-bold text-slate-900">{t.name}</div>
+                              <div className="text-[10px] text-slate-400 font-mono">
+                                {t.employeeId ? `#${t.employeeId}` : t.email} • Mérito Global
+                              </div>
+                            </td>
+                            <td className="px-4 py-2 text-slate-500 italic">General (sin materias previas registradas)</td>
+                            <td className="px-4 py-2 text-center">
+                              <input
+                                type="number"
+                                min={0}
+                                max={20}
+                                value={expEdit[t.email] ?? String(t.expPeriods ?? t.expYears ?? 0)}
+                                onChange={(e) => onExpEditChange(t.email, e.target.value)}
+                                className="w-16 border border-slate-300/80 rounded-lg px-2 py-0.5 text-center font-mono font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              />
+                            </td>
+                            <td className="px-4 py-2">
+                              <button
+                                onClick={() => onUpdateExp(t.email)}
+                                className="px-3 py-1 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition shadow-2xs cursor-pointer"
+                              >
+                                Guardar
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
+                    } else {
+                      // Ordenar materias alfabéticamente
+                      const sortedCodes = Array.from(allCodes).sort();
+                      for (const code of sortedCodes) {
+                        const matchesCourse = matchesTeacher || code.toLowerCase().includes(query);
+                        if (!matchesCourse) continue;
+
+                        const expEntry = t.exps?.find((e) => e.courseCode === code);
+                        const periods = expEntry?.periods ?? expEntry?.years ?? 0;
+                        const key = `${t.email}_${code}`;
+                        const isRequestedThisCycle = requested?.has(code);
+
+                        rows.push(
+                          <tr key={`${t.id}-${code}`} className="hover:bg-indigo-50/20 transition-colors">
+                            <td className="px-4 py-2">
+                              <div className="font-bold text-slate-900">{t.name}</div>
+                              <div className="text-[10px] text-slate-400 font-mono">
+                                {t.employeeId ? `#${t.employeeId}` : t.email} • Mérito: {t.expPeriods ?? 0}
+                              </div>
+                            </td>
+                            <td className="px-4 py-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded text-[11px]">
+                                  {code}
+                                </span>
+                                {isRequestedThisCycle && (
+                                  <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-full">
+                                    Solicitada
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-2 text-center">
+                              <input
+                                type="number"
+                                min={0}
+                                max={20}
+                                value={expCourseEdit[key] ?? String(periods)}
+                                onChange={(e) => onExpCourseEditChange(key, e.target.value)}
+                                className="w-16 border border-slate-300/80 rounded-lg px-2 py-0.5 text-center font-mono font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              />
+                            </td>
+                            <td className="px-4 py-2">
+                              <button
+                                onClick={() => onUpdateExpCourse(t.email, code)}
+                                className="px-3 py-1 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition shadow-2xs cursor-pointer"
+                              >
+                                Guardar
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
+                    }
+                  }
+
+                  if (rows.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
+                          {query
+                            ? `No se encontraron resultados para "${query}".`
+                            : 'No hay registros de experiencia docente cargados. Presiona "Sincronizar desde Histórico".'}
                         </td>
                       </tr>
                     );
-                  } else {
-                    for (const code of Array.from(codes)) {
-                      const expEntry = t.exps?.find((e) => e.courseCode === code);
-                      const periods = expEntry?.periods ?? expEntry?.years ?? 0;
-                      const key = `${t.email}_${code}`;
-                      rows.push(
-                        <tr key={`${t.id}-${code}`} className="hover:bg-indigo-50/20 transition-colors">
-                          <td className="px-4 py-2 font-bold text-slate-900">{t.name}</td>
-                          <td className="px-4 py-2 font-mono font-bold text-indigo-700">{code}</td>
-                          <td className="px-4 py-2 text-center">
-                            <input
-                              type="number"
-                              min={0}
-                              max={20}
-                              value={expCourseEdit[key] ?? String(periods)}
-                              onChange={(e) => onExpCourseEditChange(key, e.target.value)}
-                              className="w-16 border border-slate-300/80 rounded-lg px-2 py-0.5 text-center font-mono font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                            />
-                          </td>
-                          <td className="px-4 py-2">
-                            <button
-                              onClick={() => onUpdateExpCourse(t.email, code)}
-                              className="px-3 py-1 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition shadow-2xs cursor-pointer"
-                            >
-                              Guardar
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    }
                   }
-                }
-                if (rows.length === 0) {
-                  return (
-                    <tr>
-                      <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
-                        No hay registros de experiencia docente cargados. Presiona "Sincronizar desde Histórico".
-                      </td>
-                    </tr>
-                  );
-                }
-                return rows;
-              })()}
-            </tbody>
-          </table>
+                  return rows;
+                })()}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
